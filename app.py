@@ -1,11 +1,22 @@
+import sys
+import os
+
+# Ensure current directory and backend_bac are in Python path
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+BACKEND_BAC_DIR = os.path.join(BASE_DIR, 'backend_bac')
+if os.path.exists(BACKEND_BAC_DIR) and BACKEND_BAC_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_BAC_DIR)
+
 from flask import Flask, request, jsonify, send_file, send_from_directory, make_response
 from flask_socketio import SocketIO
 from flask_cors import CORS
 from flask_mail import Mail, Message
 from reportlab.pdfgen import canvas
-import os
 import requests
 from werkzeug.utils import secure_filename
+
 import datetime
 import json
 from decimal import Decimal
