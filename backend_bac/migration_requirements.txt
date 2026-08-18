@@ -1,0 +1,6 @@
+flask==2.0.1
+flask-mysqldb==0.2.0
+pymongo==4.3.3
+python-dotenv==1.0.0
+mysql-connector-python==8.0.32
+supabase==1.0.3 

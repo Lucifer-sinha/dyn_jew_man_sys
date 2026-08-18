@@ -1,0 +1,1154 @@
+import React, { useState, useEffect, lazy, Suspense, memo, useCallback, useMemo } from 'react';
+import { io } from 'socket.io-client';
+import { motion, AnimatePresence } from 'framer-motion';
+import Login from './Login';
+import RoyalHeader from './RoyalHeader';
+// Lazy load components that aren't needed on initial render
+const LiveView = lazy(() => import('./LiveView'));
+const AddItemView = lazy(() => import('./AddItemView'));
+const DetailsView = lazy(() => import('./DetailsView'));
+const HistoryView = lazy(() => import('./HistoryView'));
+const CartView = lazy(() => import('./CartView'));
+const CategoryTree = lazy(() => import('./CategoryTree'));
+const StatisticsView = lazy(() => import('./StatisticsView'));
+const SettingsView = lazy(() => import('./SettingsView'));
+const LiveBackground = lazy(() => import('../components/LiveBackground'));
+import { useWallpaper } from '../contexts/WallpaperContext';
+
+// Create socket connection with reconnection options for better stability
+const socket = io("http://127.0.0.1:5000", {
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
+  reconnectionAttempts: 5,
+  timeout: 20000,
+});
+
+// Helper for currency formatting - change $ to ₹
+// Memoized for better performance
+const formatCurrency = (() => {
+  const formatter = new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  });
+  return (value) => formatter.format(value);
+})();
+
+// Simple loading fallback component for Suspense
+const LoadingFallback = memo(() => (
+  <div className="flex items-center justify-center w-full h-full p-8">
+    <div className="text-center">
+      <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto"></div>
+      <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
+    </div>
+  </div>
+));
+
+const Dashboard = memo(() => {
+  // Basic states
+  const [activeView, setActiveView] = useState('live');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userRole, setUserRole] = useState("");
+  
+  // Data states
+  const [jewelryItems, setJewelryItems] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [nestedCategories, setNestedCategories] = useState([]);
+  const [materials, setMaterials] = useState([]);
+  const [cart, setCart] = useState([]);
+  const [orderHistory, setOrderHistory] = useState([]);
+
+  // Metal prices
+  const [goldPrice, setGoldPrice] = useState(null);
+  const [silverPrice, setSilverPrice] = useState(null);
+
+  // For Add/Edit item
+  const [newItem, setNewItem] = useState({
+    unique_id: "",
+    name: "",
+    category_id: "",
+    material_id: "",
+    price: "",
+    weight: "",
+    stock: "",
+    description: "",
+    image_url: ""
+  });
+  const [editItem, setEditItem] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+
+  // For placing orders
+  const [orderDetails, setOrderDetails] = useState({
+    customer_name: "",
+    customer_contact: "",
+    payment_method: "",
+    making_charges: ""
+  });
+
+  // Item details
+  const [selectedItem, setSelectedItem] = useState(null);
+  
+  // Sorting
+  const [sortOption, setSortOption] = useState("");
+
+  // Top-level category filter state
+  const [selectedCategoryId, setSelectedCategoryId] = useState(null);
+  const [topLevelCategories, setTopLevelCategories] = useState([]);
+
+  // Debug mode
+  const [debugInfo, setDebugInfo] = useState({
+    apiCalls: [],
+    categoryData: null,
+    filterAttempts: 0,
+    errors: []
+  });
+
+  // Use wallpaper context with explicit memo
+  const { wallpaperData, enableInteractivity, showGradient } = useWallpaper();
+  
+  // Create configuration for SaaS environment
+  const saasConfig = useMemo(() => ({
+    tenantId: localStorage.getItem('tenantId') || 'default',
+    plan: localStorage.getItem('subscriptionPlan') || 'basic',
+    features: {
+      allowedViews: ['live', 'details'],
+      maxItems: 1000,
+      enableAdvancedStats: false,
+      customBranding: false
+    }
+  }), []);
+
+  // Socket listeners with error handling and reconnection logic
+  useEffect(() => {
+    // Add socket connection event handlers
+    const onConnect = () => console.log('Socket connected');
+    const onDisconnect = () => console.log('Socket disconnected');
+    const onError = (error) => console.error('Socket error:', error);
+    
+    // Data update handlers
+    const handleItemsUpdate = (updatedItems) => {
+      if (Array.isArray(updatedItems)) {
+        setJewelryItems(updatedItems);
+      }
+    };
+    
+    const handleCartUpdate = (updatedCart) => {
+      if (Array.isArray(updatedCart)) {
+        setCart(updatedCart);
+      }
+    };
+    
+    // Register all event handlers
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+    socket.on('error', onError);
+    socket.on('update_items', handleItemsUpdate);
+    socket.on('update_cart', handleCartUpdate);
+    
+    // Clean up all event handlers
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+      socket.off('error', onError);
+      socket.off('update_items', handleItemsUpdate);
+      socket.off('update_cart', handleCartUpdate);
+    };
+  }, []);
+
+  // Backend fetch functions - optimized with useCallback and better error handling
+  const fetchItems = useCallback((sortKey = "") => {
+    // Only log in development mode
+    const isDev = process.env.NODE_ENV === 'development';
+    const timestamp = new Date().toISOString();
+    
+    if (isDev) {
+      console.log(`[${timestamp}] Fetching all items with sort key:`, sortKey);
+      
+      setDebugInfo(prev => ({
+        ...prev,
+        apiCalls: [...prev.apiCalls, { endpoint: '/get_items', sortKey, time: timestamp }]
+      }));
+    }
+    
+    // Build URL with params to prevent string concatenation in render cycles
+    const params = new URLSearchParams();
+    if (sortKey) {
+      let apiSortParam = sortKey;
+      if (sortKey === "price-asc") apiSortParam = "price_asc";
+      if (sortKey === "price-desc") apiSortParam = "price_desc";
+      params.append("sort", apiSortParam);
+    }
+    
+    // Add tenant ID for SaaS multi-tenancy
+    params.append("tenant", saasConfig.tenantId);
+    
+    const url = `http://127.0.0.1:5000/get_items?${params.toString()}`;
+    
+    if (isDev) {
+      console.log(`[${timestamp}] Fetching from URL:`, url);
+    }
+    
+    // Use AbortController for cancelable requests
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15-second timeout
+    
+    fetch(url, { signal: controller.signal })
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`Failed to fetch items: ${res.status} ${res.statusText}`);
+        }
+        return res.json();
+      })
+      .then(data => {
+        clearTimeout(timeoutId);
+        
+        if (isDev) {
+          console.log(`[${timestamp}] ✓ Received ${data.length} items`);
+          // Only log categories in development
+          const categoriesInItems = [...new Set(data.map(item => item.category_id))];
+          console.log(`Categories in items: ${categoriesInItems.join(', ')}`);
+        }
+        
+        if (Array.isArray(data)) {
+          setJewelryItems(data);
+        } else {
+          console.error(`Received non-array data:`, data);
+          setJewelryItems([]);
+        }
+      })
+      .catch(err => {
+        clearTimeout(timeoutId);
+        
+        // Don't log aborted requests as errors
+        if (err.name === 'AbortError') {
+          console.log('Request was aborted due to timeout');
+          return;
+        }
+        
+        console.error(`Error fetching items:`, err);
+        setJewelryItems([]);
+        
+        if (isDev) {
+          setDebugInfo(prev => ({
+            ...prev,
+            errors: [...prev.errors, { type: 'FETCH_ITEMS', message: err.message, time: timestamp }]
+          }));
+        }
+      });
+      
+    // Return cleanup function to abort fetch if component unmounts
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [saasConfig.tenantId]);
+
+  // Optimized search function with debounce and better error handling
+  const [searchDebounceTimeout, setSearchDebounceTimeout] = useState(null);
+  
+  const searchItems = useCallback((query) => {
+    // Clear any existing timeout
+    if (searchDebounceTimeout) {
+      clearTimeout(searchDebounceTimeout);
+    }
+    
+    // Set a new timeout to debounce the search
+    const timeoutId = setTimeout(() => {
+      if (!query.trim()) {
+        fetchItems(sortOption);
+        return;
+      }
+      
+      // Add tenant ID for multi-tenancy
+      const params = new URLSearchParams({
+        q: query,
+        tenant: saasConfig.tenantId
+      });
+      
+      // Use AbortController for cancelable requests
+      const controller = new AbortController();
+      const fetchTimeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      fetch(`http://127.0.0.1:5000/search?${params.toString()}`, { signal: controller.signal })
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`Failed to search: ${res.status} ${res.statusText}`);
+          }
+          return res.json();
+        })
+        .then(data => {
+          clearTimeout(fetchTimeoutId);
+          if (Array.isArray(data)) {
+            setJewelryItems(data);
+          } else {
+            console.error("Received non-array search results:", data);
+            setJewelryItems([]);
+          }
+        })
+        .catch(err => {
+          clearTimeout(fetchTimeoutId);
+          if (err.name !== 'AbortError') {
+            console.error("Error searching items:", err);
+          }
+        });
+        
+      return () => {
+        clearTimeout(fetchTimeoutId);
+        controller.abort();
+      };
+    }, 300); // 300ms debounce delay
+    
+    setSearchDebounceTimeout(timeoutId);
+    
+    // Clean up timeout on unmount
+    return () => clearTimeout(timeoutId);
+  }, [fetchItems, saasConfig.tenantId, sortOption]);
+
+  // Fetch all categories on component mount
+  useEffect(() => {
+    fetchCategories();
+    fetchMaterials();
+  }, []);
+
+  // Explicitly fetch categories function
+  const fetchCategories = () => {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] Fetching categories...`);
+    
+    setDebugInfo(prev => ({
+      ...prev,
+      apiCalls: [...prev.apiCalls, { endpoint: '/get_category_tree', time: timestamp }]
+    }));
+    
+    fetch("http://127.0.0.1:5000/get_category_tree")
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`Failed to fetch categories: ${res.status} ${res.statusText}`);
+        }
+        return res.json();
+      })
+      .then(data => {
+        console.log(`[${timestamp}] ✓ Categories fetched:`, data.length, "items");
+        
+        // Store the original nested category tree for components that need hierarchy (like AddItemView)
+        const originalCategoryTree = [...data];
+        
+        // Extract all categories from the tree, including nested subcategories
+        const extractAllCategories = (categoryTree) => {
+          let result = [];
+          
+          const processCategory = (category) => {
+            const { subcategories, ...categoryWithoutSubcategories } = category;
+            result.push(categoryWithoutSubcategories);
+            
+            // Process children
+            if (subcategories && subcategories.length > 0) {
+              subcategories.forEach(subcategory => {
+                processCategory(subcategory);
+              });
+            }
+          };
+          
+          // Process each top-level category
+          categoryTree.forEach(category => {
+            processCategory(category);
+          });
+          
+          return result;
+        };
+        
+        // Get all categories in a flattened array
+        const allCategories = extractAllCategories(data);
+        
+        // Log each category for debugging
+        allCategories.forEach(cat => {
+          console.log(`Category: ID=${cat.id}, Name=${cat.name}, Parent=${cat.parent_id || 'None'}`);
+        });
+        
+        // Store full category data (flattened)
+        setCategories(allCategories);
+        
+        // Also store original tree structure in a new state variable
+        setNestedCategories(originalCategoryTree);
+        
+        // Filter top-level only (no parent_id)
+        const topLevels = allCategories.filter(cat => !cat.parent_id && cat.visibility);
+        console.log(`[${timestamp}] Found ${topLevels.length} top-level categories:`, 
+          topLevels.map(c => `${c.name}(${c.id})`).join(', '));
+        
+        setTopLevelCategories(topLevels);
+        
+        // Save to debug info
+        setDebugInfo(prev => ({
+          ...prev, 
+          categoryData: {
+            all: allCategories,
+            topLevel: topLevels,
+            nestedTree: originalCategoryTree
+          }
+        }));
+      })
+      .catch(err => {
+        console.error(`[${timestamp}] ✗ Error fetching categories:`, err);
+        setDebugInfo(prev => ({
+          ...prev,
+          errors: [...prev.errors, { type: 'FETCH_CATEGORIES', message: err.message, time: timestamp }]
+        }));
+      });
+  };
+
+  const fetchMaterials = () => {
+    fetch("http://127.0.0.1:5000/get_materials")
+      .then(res => res.json())
+      .then(data => setMaterials(data))
+      .catch(err => console.error("Error fetching materials:", err));
+  };
+
+  const fetchOrderHistory = () => {
+    fetch("http://127.0.0.1:5000/get_order_history")
+      .then(res => res.json())
+      .then(data => setOrderHistory(data))
+      .catch(err => console.error("Error fetching order history:", err));
+  };
+
+  const fetchMetalPrices = () => {
+    fetch("http://127.0.0.1:5000/get_metal_prices")
+      .then(res => res.json())
+      .then(data => {
+        setGoldPrice(data.Gold);
+        setSilverPrice(data.Silver);
+      })
+      .catch(err => console.error("Error fetching metal prices:", err));
+  };
+
+  useEffect(() => {
+    fetchItems();
+    fetchMetalPrices();
+  }, []);
+
+  useEffect(() => {
+    if (activeView === 'history') {
+      fetchOrderHistory();
+    }
+  }, [activeView]);
+
+  useEffect(() => {
+    searchItems(searchQuery);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (sortOption) {
+      fetchItems(sortOption);
+    }
+  }, [sortOption]);
+
+  // Filter items based on selected category
+  useEffect(() => {
+    const timestamp = new Date().toISOString();
+    
+    if (selectedCategoryId) {
+      console.log(`[${timestamp}] 🔍 Filtering by category ID:`, selectedCategoryId);
+      
+      setDebugInfo(prev => ({
+        ...prev,
+        filterAttempts: prev.filterAttempts + 1,
+        apiCalls: [...prev.apiCalls, { 
+          endpoint: '/get_items_by_category', 
+          categoryId: selectedCategoryId, 
+          time: timestamp 
+        }]
+      }));
+      
+      const categoryIdParam = Number(selectedCategoryId);
+      const apiUrl = `http://127.0.0.1:5000/get_items_by_category?category_id=${categoryIdParam}`;
+      
+      console.log(`[${timestamp}] API call to:`, apiUrl);
+      
+      fetch(apiUrl)
+        .then(res => {
+          if (!res.ok) {
+            console.error(`[${timestamp}] API returned ${res.status} ${res.statusText}`);
+            throw new Error(`API error: ${res.status}`);
+          }
+          return res.json();
+        })
+        .then(data => {
+          console.log(`[${timestamp}] ✓ Found ${data.length} items for category ${categoryIdParam}`);
+          
+          // If no items from the API directly, we'll try fetching all items and filtering client-side
+          if (data.length === 0) {
+            console.log(`[${timestamp}] ⚠️ No items returned from API, trying client-side filtering...`);
+            throw new Error("No items found from API");
+          }
+          
+          // Log first few items for debugging
+          if (data.length > 0) {
+            console.log("Sample items:", data.slice(0, 3).map(i => `${i.name} (${i.category_id})`));
+          }
+          
+          setJewelryItems(data);
+        })
+        .catch(err => {
+          console.error(`[${timestamp}] ✗ Error filtering items:`, err);
+          
+          setDebugInfo(prev => ({
+            ...prev,
+            errors: [...prev.errors, { 
+              type: 'FILTER_ITEMS', 
+              message: err.message, 
+              categoryId: selectedCategoryId,
+              time: timestamp 
+            }]
+          }));
+          
+          // Fallback: Fetch all and filter client-side
+          console.log(`[${timestamp}] ⚠️ Using fallback: client-side filtering...`);
+          fetch("http://127.0.0.1:5000/get_items")
+            .then(res => res.json())
+            .then(allItems => {
+              console.log(`[${timestamp}] Received ${allItems.length} items for client-side filtering`);
+              
+              // Define all subcategories 
+              const getChildCategories = (parentId) => {
+                // Ensure parentId is a number for comparison
+                const parentIdNum = Number(parentId);
+                const result = [parentIdNum];
+                
+                // Find all direct children
+                categories.forEach(cat => {
+                  if (cat.parent_id && Number(cat.parent_id) === parentIdNum) {
+                    // Add child
+                    result.push(Number(cat.id));
+                    // Add all grandchildren recursively
+                    const grandchildren = getChildCategories(Number(cat.id));
+                    result.push(...grandchildren);
+                  }
+                });
+                
+                return [...new Set(result)]; // Remove duplicates
+              };
+              
+              // Get all subcategory IDs including the parent
+              const allCategoryIds = getChildCategories(categoryIdParam);
+              console.log(`[${timestamp}] ⚙️ Including categories:`, allCategoryIds);
+              
+              // Filter items that match any category in the list
+              const filtered = allItems.filter(item => {
+                const itemCategoryId = Number(item.category_id);
+                return allCategoryIds.includes(itemCategoryId);
+              });
+              
+              console.log(`[${timestamp}] ✓ Filtered to ${filtered.length} items`);
+              setJewelryItems(filtered);
+            })
+            .catch(clientErr => {
+              console.error(`[${timestamp}] ✗ Client-side filtering failed:`, clientErr);
+              // On complete failure, show all items
+              fetchItems(sortOption);
+            });
+        });
+    } else {
+      console.log(`[${timestamp}] 🔍 No category selected, fetching all items`);
+      fetchItems(sortOption);
+    }
+  }, [selectedCategoryId]);
+
+  // Login/Logout handlers
+  const handleLoginSuccess = (role) => {
+    setIsLoggedIn(true);
+    setUserRole(role || "customer");
+    setActiveView("live");
+  };
+
+  const handleLogout = () => {
+    fetch("http://127.0.0.1:5000/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }
+    })
+      .then(res => res.json())
+      .then(() => {
+        setIsLoggedIn(false);
+        setUserRole("");
+        setActiveView("live");
+      })
+      .catch(err => console.error("Logout error:", err));
+  };
+
+  // If not logged in, force the Login view
+  if (!isLoggedIn && activeView !== 'login') {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
+  if (activeView === 'login') {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // CRUD / Image Upload functions
+  const uploadImageIfSelected = async (unique_id) => {
+    if (!selectedFile) return;
+    const formData = new FormData();
+    formData.append('unique_id', unique_id);
+    formData.append('image', selectedFile);
+    try {
+      const res = await fetch('http://127.0.0.1:5000/upload_image', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      console.log('Image upload:', data);
+    } catch (error) {
+      console.error('Error uploading image:', error);
+    }
+  };
+
+  const handleAddItem = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        ...newItem,
+        category_id: parseInt(newItem.category_id),
+        material_id: parseInt(newItem.material_id),
+      };
+
+      const res = await fetch("http://127.0.0.1:5000/add_item", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      console.log("Item added:", data);
+
+      if (res.ok && data.message?.includes("Item added")) {
+        if (selectedFile) {
+          await uploadImageIfSelected(newItem.unique_id);
+        }
+
+        setNewItem({
+          unique_id: "",
+          name: "",
+          category_id: "",
+          material_id: "",
+          price: "",
+          weight: "",
+          stock: "",
+          description: "",
+          image_url: ""
+        });
+        setSelectedFile(null);
+        fetchItems(sortOption); // Refresh items
+      } else {
+        alert(data.error || "Failed to add item");
+      }
+
+    } catch (error) {
+      console.error("Error adding item:", error);
+      alert("Something went wrong while adding item.");
+    }
+  };
+
+  const handleUpdateItem = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("http://127.0.0.1:5000/update_item", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editItem),
+      });
+      const data = await res.json();
+      console.log("Item updated:", data);
+      if (data.message === 'Item updated successfully') {
+        await uploadImageIfSelected(editItem.unique_id);
+      }
+      setEditItem(null);
+      setSelectedFile(null);
+      setActiveView('live');
+      fetchItems(sortOption);
+    } catch (error) {
+      console.error("Error updating item:", error);
+    }
+  };
+
+  const handleDeleteItem = (id) => {
+    fetch(`http://127.0.0.1:5000/delete_item?id=${id}`, { method: "DELETE" })
+      .then(res => res.json())
+      .then(data => {
+        console.log("Item deleted:", data);
+        setActiveView('live');
+        fetchItems(sortOption);
+      })
+      .catch(err => console.error("Error deleting item:", err));
+  };
+
+  // Cart functions
+  const addToCart = (itemId) => {
+    fetch("http://127.0.0.1:5000/add_to_cart", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_id: itemId, quantity: 1 }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errorData = await res.json();
+          console.error("Add to cart failed:", errorData);
+        } else {
+          const data = await res.json();
+          console.log("Add to Cart:", data);
+        }
+      })
+      .catch(err => console.error("Error adding to cart:", err));
+  };
+
+  const removeFromCart = (itemId) => {
+    fetch("http://127.0.0.1:5000/remove_from_cart", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_id: itemId }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errorData = await res.json();
+          console.error("Remove from cart failed:", errorData);
+        } else {
+          const data = await res.json();
+          console.log("Remove from Cart:", data);
+        }
+      })
+      .catch(err => console.error("Error removing from cart:", err));
+  };
+
+  const handlePlaceOrder = (e) => {
+    e.preventDefault();
+    fetch("http://127.0.0.1:5000/place_order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...orderDetails,
+        making_charges: parseFloat(orderDetails.making_charges)
+      }),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          const blob = await res.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "bill.pdf";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setCart([]);
+          setOrderDetails({
+            customer_name: "",
+            customer_contact: "",
+            payment_method: "",
+            making_charges: ""
+          });
+        } else {
+          const errorData = await res.json();
+          console.error("Order failed:", errorData);
+        }
+      })
+      .catch(err => console.error("Error placing order:", err));
+  };
+
+  // Item details functions
+  const handleItemClick = (item) => {
+    // Fetch complete item details including category path
+    fetch(`http://127.0.0.1:5000/get_item/${item.id}`)
+      .then(res => res.json())
+      .then(data => {
+        console.log("Item details:", data);
+        setSelectedItem(data);
+        setActiveView('details');
+      })
+      .catch(err => {
+        console.error("Error fetching item details:", err);
+        // Fallback to basic item data if API fails
+        setSelectedItem(item);
+        setActiveView('details');
+      });
+  };
+
+  const handleEditClick = (item) => {
+    setEditItem(item);
+    setSelectedFile(null);
+    setActiveView('add');
+  };
+
+  // Handle category click in details view
+  const handleCategoryClick = (categoryIdOrName) => {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] Category clicked: ${categoryIdOrName} (type: ${typeof categoryIdOrName})`);
+    
+    let categoryIdToUse = null;
+    
+    // If it's already a number, use it directly
+    if (typeof categoryIdOrName === 'number') {
+      categoryIdToUse = categoryIdOrName;
+      console.log(`[${timestamp}] Using numeric category ID directly: ${categoryIdToUse}`);
+    }
+    // If it's a numeric string, convert to number
+    else if (typeof categoryIdOrName === 'string' && !isNaN(Number(categoryIdOrName))) {
+      categoryIdToUse = Number(categoryIdOrName);
+      console.log(`[${timestamp}] Converted string to numeric ID: ${categoryIdToUse}`);
+    }
+    // If it's a string (category name), find the corresponding ID by case-insensitive matching
+    else if (typeof categoryIdOrName === 'string') {
+      console.log(`[${timestamp}] Looking up category by name: "${categoryIdOrName}"`);
+      
+      // First try exact case-insensitive matching
+      const exactMatch = categories.find(
+        c => c.name && c.name.toLowerCase() === categoryIdOrName.toLowerCase()
+      );
+      
+      if (exactMatch) {
+        console.log(`[${timestamp}] ✓ Found exact category match: ${exactMatch.name} (ID: ${exactMatch.id})`);
+        categoryIdToUse = Number(exactMatch.id);
+      } else {
+        // If exact match fails, try partial matching (in case the name has whitespace/formatting differences)
+        console.log(`[${timestamp}] No exact match found, trying partial match...`);
+        const partialMatch = categories.find(
+          c => c.name && categoryIdOrName.toLowerCase().includes(c.name.toLowerCase())
+        );
+        
+        if (partialMatch) {
+          console.log(`[${timestamp}] ✓ Found partial category match: ${partialMatch.name} (ID: ${partialMatch.id})`);
+          categoryIdToUse = Number(partialMatch.id);
+        } else {
+          console.warn(`[${timestamp}] ✗ No category found with name: ${categoryIdOrName}`);
+        }
+      }
+    }
+    
+    // Verify the category exists in our data
+    if (categoryIdToUse !== null) {
+      console.log(`[${timestamp}] Validating category ID: ${categoryIdToUse}`);
+      
+      // First check in the categories array
+      const categoryExists = categories.some(cat => Number(cat.id) === Number(categoryIdToUse));
+      
+      if (!categoryExists) {
+        console.warn(`[${timestamp}] ⚠️ Category ID ${categoryIdToUse} not found directly in categories data`);
+        
+        // Check if any item has this category ID - if so, we can still use it
+        const itemWithCategory = jewelryItems.find(item => 
+          Number(item.category_id) === Number(categoryIdToUse)
+        );
+        
+        if (itemWithCategory) {
+          console.log(`[${timestamp}] ✓ Found item "${itemWithCategory.name}" with category ID ${categoryIdToUse}, proceeding anyway`);
+          // Continue with the category even though it's not in our categories array
+        } else {
+          console.warn(`[${timestamp}] ✗ Category ID ${categoryIdToUse} not found in data or items, setting to null`);
+          categoryIdToUse = null;
+          
+          // DEBUG: Log all available categories to help diagnose
+          console.log("Available categories:", categories.map(c => ({id: c.id, name: c.name})));
+          console.log("Item categories:", [...new Set(jewelryItems.map(i => i.category_id))]);
+        }
+      } else {
+        // Log which category was selected
+        const selectedCategory = categories.find(c => Number(c.id) === Number(categoryIdToUse));
+        console.log(`[${timestamp}] ✓ Selected category: ${selectedCategory.name} (ID: ${categoryIdToUse})`);
+      }
+    }
+    
+    console.log(`[${timestamp}] Setting selectedCategoryId to: ${categoryIdToUse}`);
+    setSelectedCategoryId(categoryIdToUse);
+    
+    // Ensure we navigate to the LiveView to see filtered results
+    if (activeView !== 'live') {
+      console.log(`[${timestamp}] Changing view from ${activeView} to 'live'`);
+      setActiveView('live');
+    } else {
+      // If already in live view, we need to trigger a re-fetch to ensure filtering works
+      console.log(`[${timestamp}] Already in live view, refreshing items with selected category`);
+      
+      // Force a refresh by fetching items again
+      if (categoryIdToUse) {
+        const apiUrl = `http://127.0.0.1:5000/get_items_by_category?category_id=${categoryIdToUse}`;
+        console.log(`[${timestamp}] Re-fetching from: ${apiUrl}`);
+        
+        fetch(apiUrl)
+          .then(res => res.json())
+          .then(data => {
+            console.log(`[${timestamp}] ✓ Fetched ${data.length} items for category ${categoryIdToUse}`);
+            setJewelryItems(data);
+          })
+          .catch(err => {
+            console.error(`[${timestamp}] ✗ Error fetching items for category:`, err);
+            fetchItems(sortOption);
+          });
+      } else {
+        // No category selected, fetch all items
+        fetchItems(sortOption);
+      }
+    }
+  };
+
+  // --- Optimized Animated Background Bubbles ---
+  const FloatingBubbles = memo(() => {
+    // Pre-compute random values to avoid recalculation on each render
+    const bubbles = useMemo(() => {
+      return [...Array(6)].map(() => { // Reduced from 10 to 6 bubbles
+        const initialX = Math.random() * 100;
+        const initialY = Math.random() * 100;
+        const initialScale = Math.random() * 0.4 + 0.4; // Smaller initial scale
+        const targetX = Math.random() * 100;
+        const targetY = Math.random() * 100;
+        const targetScale = Math.random() * 0.4 + 0.7; // Smaller target scale
+        const duration = Math.random() * 15 + 15; // Shorter duration
+        const width = Math.random() * 200 + 80; // Smaller width
+        const height = Math.random() * 200 + 80; // Smaller height
+        const colorIndex = Math.floor(Math.random() * 4);
+        const color = ['#ff00e660', '#00ffff60', '#ffd70060', '#ff6b6b60'][colorIndex]; // More transparent colors
+        
+        return {
+          initialX, initialY, initialScale,
+          targetX, targetY, targetScale,
+          duration, width, height, color
+        };
+      });
+    }, []); // Empty dependency array means this only runs once
+    
+    return (
+      <div className="fixed inset-0 z-[0] overflow-hidden pointer-events-none">
+        {bubbles.map((bubble, i) => (
+          <motion.div
+            key={i}
+            className="absolute rounded-full opacity-15" // Reduced opacity
+            initial={{
+              x: `${bubble.initialX}vw`,
+              y: `${bubble.initialY}vh`,
+              scale: bubble.initialScale,
+            }}
+            animate={{
+              x: `${bubble.targetX}vw`,
+              y: `${bubble.targetY}vh`,
+              scale: bubble.targetScale,
+            }}
+            transition={{
+              duration: bubble.duration,
+              repeat: Infinity,
+              ease: "linear",
+              repeatType: "reverse",
+            }}
+            style={{
+              background: `radial-gradient(circle, ${bubble.color} 0%, transparent 70%)`,
+              width: `${bubble.width}px`,
+              height: `${bubble.height}px`,
+              filter: 'blur(6px)', // Reduced blur for better performance
+            }}
+          />
+        ))}
+      </div>
+    );
+  });
+  
+  // Add displayName for better debugging
+  FloatingBubbles.displayName = 'FloatingBubbles';
+
+  // --- Top-level Category Chips - Memoized for better performance ---
+  const TopCategoryChips = memo(() => {
+    return (
+      <motion.div 
+        className="px-4 py-3 bg-black/20 backdrop-blur-md flex gap-3 overflow-x-auto hide-scrollbar rounded-xl shadow-lg mb-6 border border-white/10"
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setSelectedCategoryId(null)}
+          className={`px-5 py-2 rounded-full text-sm font-bold transition-all duration-300 ${
+            selectedCategoryId === null
+              ? 'bg-gradient-to-r from-[#ffd700] to-[#ffaa00] text-[#0a0a2f] shadow-[0_0_12px_rgba(255,215,0,0.7)]'
+              : 'bg-[#1e1e45]/40 border border-[#ffd700]/50 text-[#ffd700] hover:shadow-[0_0_8px_rgba(255,215,0,0.4)]'
+          }`}
+        >
+          All
+        </motion.button>
+        {topLevelCategories.map((cat) => (
+          <motion.button
+            key={cat.id}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setSelectedCategoryId(cat.id)}
+            className={`px-5 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all duration-300 ${
+              selectedCategoryId === cat.id
+                ? 'bg-gradient-to-r from-[#ffd700] to-[#ffaa00] text-[#0a0a2f] shadow-[0_0_12px_rgba(255,215,0,0.7)]'
+                : 'bg-[#1e1e45]/40 border border-[#ffd700]/50 text-[#ffd700] hover:shadow-[0_0_8px_rgba(255,215,0,0.4)]'
+            }`}
+          >
+            {cat.name}
+          </motion.button>
+        ))}
+        {selectedCategoryId && (
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setSelectedCategoryId(null)}
+            className="text-xs text-blue-400/90 ml-2 self-center hover:text-blue-300 transition-colors"
+          >
+            Clear Filter
+          </motion.button>
+        )}
+      </motion.div>
+    );
+    }
+  }
+}, [activeView, jewelryItems, categories, materials, newItem, selectedFile, cart, orderDetails, orderHistory, nestedCategories, selectedItem, saasConfig, userRole, handleEditClick, handleDeleteItem, handleCategoryClick, removeFromCart, handlePlaceOrder]);
+              setActiveView={setActiveView}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              onSearch={searchItems}
+              userRole={userRole}
+              cart={cart}
+              formatCurrency={formatCurrency}
+              goldPrice={goldPrice}
+              silverPrice={silverPrice}
+              selectedCategoryId={selectedCategoryId}
+              setSelectedCategoryId={setSelectedCategoryId}
+              topLevelCategories={topLevelCategories}
+              onSortChange={(option) => {
+                setSortOption(option);
+                fetchItems(option);
+              }}
+              saasConfig={saasConfig}
+            />
+            
+            {/* Show tenant information for SaaS product */}
+            {saasConfig && <TenantSelector />}
+          </div>
+
+          {/* Main Content Area - with optimized rendering */}
+          <div className="min-h-[calc(100vh-140px)] p-4">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeView}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+                className="w-full h-full"
+              >
+                <Suspense fallback={<LoadingFallback />}>
+                  <ActiveComponent />
+                </Suspense>
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </>
+      ) : (
+        <Login 
+          setIsLoggedIn={setIsLoggedIn} 
+          setUserRole={setUserRole} 
+          fetchItems={fetchItems}
+          fetchCategories={fetchCategories}
+          fetchMaterials={fetchMaterials}
+        />
+      )}
+    </div>
+  );
+});
+
+// Set display name for debugging
+TopCategoryChips.displayName = 'TopCategoryChips';
+
+// For a full SaaS application, implement a tenant selector component
+const TenantSelector = memo(() => {
+  return (
+    <div className="mb-4 p-2 text-xs bg-gray-800/50 rounded-lg">
+      <span className="text-gray-400 mr-2">Tenant:</span>
+      <span className="font-semibold text-white">{saasConfig.tenantId}</span>
+      <span className="ml-3 text-gray-400 mr-2">Plan:</span>
+      <span className="font-semibold text-white capitalize">{saasConfig.plan}</span>
+    </div>
+  );
+});
+
+// Set display name for debugging
+TenantSelector.displayName = 'TenantSelector';
+
+return (
+  <div className="min-h-screen">
+    {/* Background components - lazy loaded and optimized */}
+    <Suspense fallback={<div className="fixed inset-0 bg-primary-900 opacity-50"></div>}>
+      <LiveBackground
+        particleColor={wallpaperData.particleColor}
+        backgroundColor={wallpaperData.backgroundColor}
+        particleCount={wallpaperData.particleCount}
+        particleDensity={wallpaperData.particleDensity}
+        particleEffect={wallpaperData.particleEffect}
+        enableInteractivity={enableInteractivity}
+        showGradient={showGradient}
+      />
+    </Suspense>
+    
+    {/* Decorative FloatingBubbles with transparency - only render if not mobile */}
+    {typeof window !== 'undefined' && window.innerWidth > 768 && (
+      <FloatingBubbles />
+    )}
+    
+    {isLoggedIn ? (
+      <>
+        <div className="p-4 bg-opacity-90 bg-gray-900 text-white">
+          <RoyalHeader
+            activeView={activeView}
+            setActiveView={setActiveView}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            onSearch={searchItems}
+            userRole={userRole}
+            cart={cart}
+            formatCurrency={formatCurrency}
+            goldPrice={goldPrice}
+            silverPrice={silverPrice}
+            selectedCategoryId={selectedCategoryId}
+            setSelectedCategoryId={setSelectedCategoryId}
+            topLevelCategories={topLevelCategories}
+            onSortChange={(option) => {
+              setSortOption(option);
+              fetchItems(option);
+            }}
+            saasConfig={saasConfig}
+          />
+          
+          {/* Show tenant information for SaaS product */}
+          {saasConfig && <TenantSelector />}
+        </div>
+
+        {/* Main Content Area - with optimized rendering */}
+        <div className="min-h-[calc(100vh-140px)] p-4">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeView}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="w-full h-full"
+            >
+              <Suspense fallback={<LoadingFallback />}>
+                <ActiveComponent />
+              </Suspense>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </>
+    ) : (
+      <Login 
+        setIsLoggedIn={setIsLoggedIn} 
+        setUserRole={setUserRole} 
+        fetchItems={fetchItems}
+        fetchCategories={fetchCategories}
+        fetchMaterials={fetchMaterials}
+      />
+    )}
+  </div>
+);
+
+export default memo(Dashboard);

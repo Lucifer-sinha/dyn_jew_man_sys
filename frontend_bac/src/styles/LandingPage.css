@@ -1,0 +1,383 @@
+/* Custom properties for colors (based on screenshots and new request) */
+:root {
+    --color-background-dark: #000000; /* Pure Black Background */
+    /* Existing colors, adjust as needed based on new image */
+    --color-primary-dark: #0a0a23;
+    --color-primary-medium: #1a1a3a;
+    --color-primary-light: #11112a;
+    --color-accent-gold: #f3ba19;
+    --color-accent-golden-yellow: #ffd700;
+    --color-accent-orange: #e09600;
+    --color-accent-purple-light: #a78bfa;
+    --color-accent-purple-dark: #7c3aed;
+    --color-accent-teal: #4ecdc4;
+    --color-accent-pink: #ff6b6b;
+    --color-text-light: #ffffff;
+    --color-text-medium: #b0b0b0;
+    --color-text-dark: #808080;
+    --color-glass-border: rgba(255, 255, 255, 0.15);
+    --color-glass-border-hover: rgba(243, 186, 25, 0.7);
+    --color-glass-bg: rgba(17, 17, 42, 0.5);
+    --color-glass-bg-hover: rgba(27, 27, 57, 0.6);
+    --color-card-selected-bg: rgba(68, 29, 131, 0.7);
+    --color-border-dark-transparent: rgba(17, 17, 17, 0.5);
+    --color-border-medium-gray: #333;
+  
+    /* Colors for the new flowing gradient - sampling from Stripe image */
+    --gradient-color-1: #f0a; /* Pinkish-Purple */
+    --gradient-color-2: #c06; /* Reddish-Purple */
+    --gradient-color-3: #f06; /* Bright Pink */
+    --gradient-color-4: #ff8c00; /* Dark Orange */
+    --gradient-color-5: #4682b4; /* Steel Blue */
+    --gradient-color-6: #00bfff; /* Deep Sky Blue */
+  }
+  
+  /* Base styles */
+  body {
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    color: var(--color-text-light);
+    background-color: var(--color-background-dark); /* Set to pure black */
+    background-image: none; /* Ensure no gradient background from previous settings */
+    min-height: 100vh; /* Ensure body covers full height for background */
+  }
+  
+  /* Container for positioning background effects */
+  /* This should be the main wrapper div in LandingPage.jsx */
+  .landing-page-container {
+    position: relative;
+    overflow: hidden;
+    z-index: 0; /* Ensure content is above this */
+  }
+  
+  /* Diagonal Flowing Gradient Background Effect */
+  .landing-page-container::before {
+    content: '';
+    position: absolute;
+    top: -100vh; /* Position off-screen upwards */
+    left: -50vw;  /* Position off-screen to the left */
+    width: 200vw; /* Make it large enough to cover diagonally */
+    height: 200vh; /* Make it large enough to cover diagonally */
+    background: linear-gradient(
+      45deg, /* Diagonal angle */
+      var(--gradient-color-1) 0%,
+      var(--gradient-color-2) 15%,
+      var(--gradient-color-3) 30%,
+      var(--gradient-color-4) 50%,
+      var(--gradient-color-5) 70%,
+      var(--gradient-color-6) 85%,
+      var(--gradient-color-1) 100%
+    );
+    background-size: 300% 300%; /* Make background size larger for animation */
+    animation: diagonal-flow 20s ease infinite; /* Animation for flowing effect */
+    opacity: 0.6; /* Adjust opacity as needed */
+    z-index: -2; /* Position far behind content and grid */
+    transform-origin: 0% 0%; /* Anchor transformation to top-left */
+    pointer-events: none; /* Allow clicks to pass through */
+  }
+  
+  @keyframes diagonal-flow {
+      0% {
+          background-position: 0% 0%;
+      }
+      100% {
+          background-position: 100% 100%;
+      }
+  }
+  
+  /* Grid pattern overlay - Ensure it's above the flowing gradient but below content */
+  /* Assuming this is a direct child of the main container with these classes */
+  .landing-page-container > .absolute.inset-0.bg-\[url\(\'/grid\.svg\'\)\] {
+      z-index: -1; /* Above the flowing gradient (z-index: -2) but below content (z-index: 10) */
+      opacity: 0.1;
+  }
+  
+  
+  /* Ensure all main content sections have a z-index higher than the background effects */
+  .z-10 {
+    z-index: 10;
+  }
+  
+  /* Existing styles from previous code below */
+  .relative { position: relative; }
+  .overflow-hidden { overflow: hidden; }
+  .text-center { text-align: center; }
+  .text-left { text-align: left; }
+  .max-w-7xl { max-width: 80rem; }
+  .max-w-5xl { max-width: 64rem; }
+  .max-w-3xl { max-width: 48rem; }
+  .max-w-2xl { max-width: 42rem; }
+  .max-w-md { max-width: 28rem; }
+  .mx-auto { margin-left: auto; margin-right: auto; }
+  .px-4 { padding-left: 1rem; padding-right: 1rem; }
+  .py-8 { padding-top: 2rem; padding-bottom: 2rem; }
+  .py-12 { padding-top: 3rem; padding-bottom: 3rem; }
+  .py-20 { padding-top: 5rem; padding-bottom: 5rem; }
+  .pt-20 { padding-top: 5rem; }
+  .pt-32 { padding-top: 8rem; }
+  .pb-16 { padding-bottom: 4rem; }
+  .pb-20 { padding-bottom: 5rem; }
+  .mb-1 { margin-bottom: 0.25rem; }
+  .mb-2 { margin-bottom: 0.5rem; }
+  .mb-4 { margin-bottom: 1rem; }
+  .mb-6 { margin-bottom: 1.5rem; }
+  .mb-8 { margin-bottom: 2rem; }
+  .mb-12 { margin-bottom: 3rem; }
+  .mb-20 { margin-bottom: 5rem; }
+  .mt-2 { margin-top: 0.5rem; }
+  .mt-8 { margin-top: 2rem; }
+  .pt-8 { padding-top: 2rem; }
+  .gap-2 { gap: 0.5rem; }
+  .gap-4 { gap: 1rem; }
+  .gap-6 { gap: 1.5rem; }
+  .gap-8 { gap: 2rem; }
+  
+  .space-x-4 > :not([hidden]) ~ :not([hidden]) { --tw-space-x-reverse: 0; margin-right: calc(1rem * var(--tw-space-x-reverse)); margin-left: calc(1rem * calc(1 - var(--tw-space-x-reverse))); }
+  .space-y-2 > :not([hidden]) ~ :not([hidden]) { --tw-space-y-reverse: 0; margin-top: calc(0.5rem * calc(1 - var(--tw-space-y-reverse))); margin-bottom: calc(0.5rem * var(--tw-space-y-reverse)); }
+  .space-y-3 > :not([hidden]) ~ :not([hidden]) { --tw-space-y-reverse: 0; margin-top: calc(0.75rem * calc(1 - var(--tw-space-y-reverse))); margin-bottom: calc(0.75rem * var(--tw-space-y-reverse)); }
+  
+  
+  /* Typography */
+  .text-white { color: var(--color-text-light); }
+  .text-gray-300 { color: var(--color-text-medium); }
+  .text-gray-400 { color: var(--color-text-dark); }
+  .text-gray-600 { color: #4a5568; }
+  .text-\[\#a78bfa\] { color: var(--color-accent-purple-light); }
+  .text-\[\#f3ba19\] { color: var(--color-accent-gold); }
+  .text-\[\#000014\] { color: #000014; }
+  .text-xs { font-size: 0.75rem; }
+  .text-sm { font-size: 0.875rem; }
+  .text-base { font-size: 1rem; }
+  .text-xl { font-size: 1.25rem; }
+  .text-2xl { font-size: 1.5rem; }
+  .text-3xl { font-size: 1.875rem; }
+  .text-4xl { font-size: 2.25rem; }
+  .text-5xl { font-size: 3rem; }
+  .text-6xl { font-size: 3.75rem; }
+  .text-7xl { font-size: 4.5rem; }
+  .font-bold { font-weight: 700; }
+  .font-semibold { font-weight: 600; }
+  .font-normal { font-weight: 400; }
+  .uppercase { text-transform: uppercase; }
+  .italic { font-style: italic; }
+  
+  /* Backgrounds and Overlays */
+  .bg-\[\#11112a\]\/80 { background-color: rgba(17, 17, 42, 0.8); }
+  .bg-\[\#11112a\]\/50 { background-color: rgba(17, 17, 42, 0.5); }
+  .bg-\[\#a78bfa\]\/20 { background-color: rgba(167, 139, 250, 0.2); }
+  .bg-\[\#111\]\/50 { background-color: rgba(17, 17, 17, 0.5); }
+  .opacity-10 { opacity: 0.1; }
+  .opacity-30 { opacity: 0.3; }
+  .opacity-70 { opacity: 0.7; }
+  .opacity-90 { opacity: 0.9; }
+  .bg-\[url\(\'/grid\.svg\'\)\] { background-image: url('/grid.svg'); }
+  .bg-center { background-position: center; }
+  .bg-cover { background-size: cover; }
+  
+  
+  /* Borders */
+  .border-b { border-bottom-width: 1px; }
+  .border-t { border-top-width: 1px; }
+  .border-2 { border-width: 2px; }
+  .border-4 { border-width: 4px; }
+  .border-\[\#111\]\/50 { border-color: var(--color-border-dark-transparent); }
+  .border-\[\#a78bfa\] { border-color: var(--color-accent-purple-light); }
+  .border-\[\#f3ba19\]\/50 { border-color: rgba(243, 186, 25, 0.5); }
+  .border-\[\#333\] { border-color: var(--color-border-medium-gray); }
+  
+  /* Gradients */
+  .bg-clip-text { -webkit-background-clip: text; background-clip: text; }
+  .bg-gradient-to-r { background-image: linear-gradient(to right, var(--tw-gradient-stops)); }
+  .from-\[\#f3ba19\] { --tw-gradient-from: var(--color-accent-gold) var(--tw-gradient-from-position); --tw-gradient-to: rgba(243, 186, 25, 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+  .via-\[\#ffd700\] { --tw-gradient-to: rgba(255, 215, 0, 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--color-accent-golden-yellow) var(--tw-gradient-via-position), var(--tw-gradient-to); }
+  .to-\[\#f3ba19\] { --tw-gradient-to: var(--color-accent-gold) var(--tw-gradient-to-position); }
+  .from-\[\#a78bfa\] { --tw-gradient-from: var(--color-accent-purple-light) var(--tw-gradient-from-position); --tw-gradient-to: rgba(167, 139, 250, 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+  .to-\[\#7c3aed\] { --tw-gradient-to: var(--color-accent-purple-dark) var(--tw-gradient-to-position); }
+  .to-\[\#e09600\] { --tw-gradient-to: var(--color-accent-orange) var(--tw-gradient-to-position); }
+  
+  .gradient-text {
+    background: linear-gradient(45deg, var(--color-accent-gold), var(--color-accent-golden-yellow), var(--color-accent-gold));
+    background-size: 200% 200%;
+    animation: gradient 5s ease infinite;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  
+  /* Additional Gradient for Redefined text in Hero */
+  .hero-redefined-gradient {
+      background: linear-gradient(45deg, var(--color-accent-teal), var(--color-accent-pink), var(--color-accent-teal)); /* Teal to Pink gradient */
+      background-size: 200% 200%;
+      animation: gradient 5s ease infinite;
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+  }
+  
+  /* Layout */
+  .flex { display: flex; }
+  .justify-between { justify-content: space-between; }
+  .items-center { align-items: center; }
+  .flex-col { flex-direction: column; }
+  .flex-grow { flex-grow: 1; }
+  .flex-wrap { flex-wrap: wrap; }
+  .grid { display: grid; }
+  .grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+  .hidden { display: none; }
+  
+  
+  /* Component specific styles */
+  /* Navbar */
+  .fixed { position: fixed; }
+  .top-0 { top: 0; }
+  .left-0 { left: 0; }
+  .right-0 { right: 0; }
+  .backdrop-blur-md { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  
+  /* Hero Section */
+  .hero-title { font-size: 4.5rem; line-height: 1.1; }
+  
+  /* Glassmorphism and 3D */
+  .glass-card {
+    background: var(--color-glass-bg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--color-glass-border);
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+    border-right-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 10px 40px 0 rgba(31, 38, 135, 0.45);
+    transition: all 0.5s ease;
+    position: relative;
+    overflow: hidden;
+    transform-style: preserve-3d;
+  }
+  
+  .glass-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(to bottom right, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0));
+    z-index: 1;
+    pointer-events: none;
+  }
+  
+  .glass-card:hover {
+    background: var(--color-glass-bg-hover);
+    border-color: var(--color-glass-border-accent);
+    box-shadow: 0 20px 60px 0 rgba(31, 38, 135, 0.7);
+    transform: translateY(-20px) rotateX(10deg) rotateY(10deg) translateZ(40px); /* Increased 3D hover */
+  }
+  
+  /* Style for icons inside glass cards */
+  .glass-card .lucide {
+    transition: transform 0.5s ease;
+  }
+  
+  .glass-card:hover .lucide {
+    transform: translateZ(30px) rotateZ(8deg); /* Increased icon 3D hover */
+  }
+  
+  /* Specific style for the selected feature card background */
+  .glass-card.selected {
+      background: var(--color-card-selected-bg);
+      border-color: var(--color-accent-gold);
+  }
+  
+  
+  /* Existing Animations */
+  @keyframes gradient {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  
+  @keyframes float {
+    0% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+    100% { transform: translateY(0px); }
+  }
+  
+  @keyframes glow {
+    0% { box-shadow: 0 0 5px rgba(243, 186, 25, 0.2), 0 0 10px rgba(243, 186, 25, 0.2), 0 0 15px rgba(243, 186, 25, 0.2); }
+    50% { box-shadow: 0 0 10px rgba(243, 186, 25, 0.4), 0 0 20px rgba(243, 186, 25, 0.4), 0 0 30px rgba(243, 186, 25, 0.4); }
+    100% { box-shadow: 0 0 5px rgba(243, 186, 25, 0.2), 0 0 10px rgba(243, 186, 25, 0.2), 0 0 15px rgba(243, 186, 25, 0.2); }
+  }
+  
+  @keyframes shimmer {
+    0% { background-position: -1000px 0; }
+    100% { background-position: 1000px 0; }
+  }
+  
+  @keyframes subtle-pulse {
+    0% { transform: scale(1); box-shadow: 0 0 0px rgba(243, 186, 25, 0); }
+    50% { transform: scale(1.01); box-shadow: 0 0 10px rgba(243, 186, 25, 0.2); }
+    100% { transform: scale(1); box-shadow: 0 0 0px rgba(243, 186, 25, 0); }
+  }
+  
+  @keyframes radial-pulse {
+    0% { transform: scale(0.9); opacity: 0.7; }
+    50% { transform: scale(1); opacity: 1; }
+    100% { transform: scale(0.9); opacity: 0.7; }
+  }
+  
+  
+  .animate-gradient { animation: gradient 20s ease infinite; background-size: 400% 400%; }
+  .animate-float { animation: float 6s ease-in-out infinite; }
+  .animate-glow { animation: glow 3s ease-in-out infinite; }
+  .animate-shimmer {
+    background: linear-gradient( 90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0) 100% );
+    background-size: 1000px 100%;
+    animation: shimmer 2s infinite linear;
+  }
+  
+  /* Apply perspective to a container for 3D effects */
+  .perspective-container { perspective: 1500px; } /* Increased perspective */
+  
+  /* Custom scrollbar */
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: rgba(17, 17, 42, 0.5); }
+  ::-webkit-scrollbar-thumb { background: rgba(243, 186, 25, 0.5); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(243, 186, 25, 0.8); }
+  
+  
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .glass-card { margin: 1rem; transform: none !important; }
+    .glass-card:hover { transform: none !important; }
+  
+    .gradient-text, .hero-redefined-gradient { font-size: 2rem; }
+    .hero-title { font-size: 2.5rem; }
+    .text-5xl { font-size: 2.5rem; }
+    .text-7xl { font-size: 3rem; }
+  
+    .md\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .md\:flex { display: flex; }
+    .md\:flex-row { flex-direction: row; }
+    .md\:mb-0 { margin-bottom: 0; }
+    .md\:w-auto { width: auto; }
+  
+    .footer .grid > div { text-align: center; }
+    .footer .grid { gap: 2rem; }
+  
+    /* Adjust diagonal flow for smaller screens if needed */
+    .landing-page-container::before {
+        top: -150vh; /* Further off-screen */
+        left: -100vw; /* Further off-screen */
+        width: 300vw;
+        height: 300vh;
+    }
+  }
+  
+  @media (min-width: 769px) {
+    .lg\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .lg\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .lg\:grid-cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  
+    .sm\:px-6 { padding-left: 1.5rem; padding-right: 1.5rem; }
+    .lg\:px-8 { padding-left: 2rem; padding-right: 2rem; }
+  
+    .footer .grid > div { text-align: left; }
+  }

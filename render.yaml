@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: jewelry-management-backend
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -k eventlet -w 1 app:app
+    envVars:
+      - key: PYTHONPATH
+        value: .
+      - key: MONGODB_URI
+        value: mongodb+srv://lucifers_database:LuciFeR_DB@cluster0.ntfbm.mongodb.net/jewelry_db?retryWrites=true&w=majority
+      - key: SECRET_KEY
+        generateValue: true
